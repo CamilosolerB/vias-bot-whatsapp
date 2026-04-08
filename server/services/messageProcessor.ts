@@ -8,6 +8,8 @@ import { getActiveRoutes } from '../db';
 export interface ProcessedMessage {
   queryType: 'traffic' | 'weather' | 'route' | 'incident' | 'help' | 'unknown';
   location?: string;
+  origin?: string;      // Para consultas de ruta "de X a Y"
+  destination?: string; // Para consultas de ruta "de X a Y"
   coordinates?: { latitude: number; longitude: number };
   routeId?: number;
   originalText: string;
@@ -86,12 +88,20 @@ export async function processMessage(text: string): Promise<ProcessedMessage> {
   // Detectar tipo de consulta
   const queryType = detectQueryType(lowerText);
 
+  // Intentar detectar patrón "de X a Y" / "desde X hasta Y"
+  const routePattern = extractOriginDestination(lowerText);
+
   // Extraer ubicación o ruta
   let location: string | undefined;
+  let origin: string | undefined;
+  let destination: string | undefined;
   let coordinates: { latitude: number; longitude: number } | undefined;
   let routeId: number | undefined;
 
-  if (queryType === 'route') {
+  if (routePattern) {
+    origin = routePattern.origin;
+    destination = routePattern.destination;
+  } else if (queryType === 'route') {
     const routeMatch = await extractRoute(lowerText);
     if (routeMatch) {
       location = routeMatch.name;
@@ -104,20 +114,17 @@ export async function processMessage(text: string): Promise<ProcessedMessage> {
   } else {
     // Intentar extraer ubicación del texto
     location = extractLocation(lowerText);
-
-    // Si no hay ubicación explícita, usar ubicación por defecto o pedir al usuario
-    if (!location && queryType !== 'help' && queryType !== 'unknown') {
-      location = 'ubicación actual'; // Esto se manejará en el frontend
-    }
   }
 
   return {
     queryType,
     location,
+    origin,
+    destination,
     coordinates,
     routeId,
     originalText: text,
-    confidence: calculateConfidence(queryType, location),
+    confidence: calculateConfidence(queryType, location ?? origin),
   };
 }
 
@@ -214,6 +221,33 @@ function extractLocation(text: string): string | undefined {
 }
 
 /**
+ * Extrae origen y destino de mensajes tipo "de X a Y" o "desde X hasta Y"
+ */
+function extractOriginDestination(
+  text: string
+): { origin: string; destination: string } | null {
+  // Patrones: "de X a Y", "desde X hasta Y", "desde X a Y", "de X hasta Y"
+  const patterns = [
+    /(?:desde|de)\s+(.+?)\s+(?:hasta|a)\s+(.+?)(?:\?|$|\.)/i,
+    /(?:saliendo de|partiendo de)\s+(.+?)\s+(?:hacia|hasta|a)\s+(.+?)(?:\?|$|\.)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match && match[1] && match[2]) {
+      const origin = match[1].trim();
+      const destination = match[2].trim();
+      // Filtrar si alguno es muy corto o es una stopword
+      if (origin.length > 2 && destination.length > 2) {
+        return { origin, destination };
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * Calcula la confianza del procesamiento
  */
 function calculateConfidence(
@@ -241,30 +275,30 @@ function calculateConfidence(
  * Genera una respuesta de ayuda
  */
 export function generateHelpMessage(): string {
-  return `🤖 **VíasBot - Ayuda**
+  return `🤖 <b>VíasBot - Ayuda</b>
 
 Puedo ayudarte con:
 
-📍 **Tráfico**: Pregunta sobre el estado del tráfico
-   Ej: "¿Cómo está el tráfico en la Calle 5?"
-   Ej: "Tráfico en la Carrera 7"
+🚗 <b>Tráfico en una zona</b>
+   Ej: "tráfico en la Calle 5"
+   Ej: "vías en el centro"
 
-🌤️ **Clima**: Consulta las condiciones climáticas
-   Ej: "¿Qué clima hace en la Avenida Principal?"
-   Ej: "Clima en el centro"
+🗺️ <b>Ruta de A → B (con tiempo real)</b>
+   Ej: "de la Calle 5 a la Carrera 7"
+   Ej: "desde el centro hasta el aeropuerto"
+   Ej: "tráfico de la Av. Principal a la Calle 80"
 
-🛣️ **Rutas**: Información sobre rutas frecuentes
-   Ej: "¿Cómo está la ruta al trabajo?"
-   Ej: "Tráfico ruta centro-norte"
+🌤️ <b>Clima</b>
+   Ej: "clima en el norte"
+   Ej: "lluvia en la autopista"
 
-⚠️ **Incidentes**: Reporta o consulta accidentes
-   Ej: "Hay un accidente en la Calle 10"
-   Ej: "Incidentes en la autopista"
+⚠️ <b>Incidentes</b>
+   Ej: "accidente en la Calle 10"
+   Ej: "incidentes en la autopista"
 
-💡 **Consejos**:
-   • Sé específico con la ubicación
-   • Incluye nombre de calle o avenida
-   • Pregunta de forma natural
+💡 <b>Tips</b>:
+   • Para saber cuánto tardas de un lugar a otro, escribe <b>"de [origen] a [destino]"</b>
+   • Sé específico con calles, barrios o zonas
 
 ¿Qué necesitas saber?`;
 }

@@ -17,8 +17,10 @@ import {
   getTrafficFlow,
   getTrafficIncidents,
   getWeatherData,
+  getRouteTime,
   formatTrafficResponse,
 } from '../services/trafficWeatherService';
+import type { RouteInfo } from '../services/trafficWeatherService';
 import {
   geocodeAddress,
 } from '../services/geocodingService';
@@ -132,13 +134,73 @@ async function handleIncomingMessage(message: any, text: string) {
 
     if (processed.queryType === 'help') {
       responseText = generateHelpMessage();
+
     } else if (!isValidQuery(processed)) {
       responseText = generateUnknownMessage();
+
+    } else if (processed.origin && processed.destination) {
+      // ── MODO RUTA A → B ──────────────────────────────────────────────
+      // Geocodificar origen y destino en paralelo
+      const [geocodedOrigin, geocodedDest] = await Promise.all([
+        geocodeAddress(processed.origin, ENV.tomtomApiKey),
+        geocodeAddress(processed.destination, ENV.tomtomApiKey),
+      ]);
+
+      if (!geocodedOrigin) {
+        responseText = `❌ No pude encontrar el origen: "${processed.origin}".\nSé más específico con la dirección.`;
+      } else if (!geocodedDest) {
+        responseText = `❌ No pude encontrar el destino: "${processed.destination}".\nSé más específico con la dirección.`;
+      } else {
+        // Obtener ruta + tráfico en paralelo
+        const [routeInfo, traffic, weather, incidents] = await Promise.all([
+          getRouteTime(
+            { latitude: geocodedOrigin.latitude, longitude: geocodedOrigin.longitude },
+            { latitude: geocodedDest.latitude,   longitude: geocodedDest.longitude   },
+            geocodedOrigin.address,
+            geocodedDest.address,
+            ENV.tomtomApiKey
+          ),
+          getTrafficFlow(
+            { latitude: geocodedOrigin.latitude, longitude: geocodedOrigin.longitude },
+            ENV.tomtomApiKey
+          ),
+          getWeatherData(
+            { latitude: geocodedOrigin.latitude, longitude: geocodedOrigin.longitude },
+            ENV.openweatherApiKey
+          ),
+          getTrafficIncidents(
+            {
+              minLat: Math.min(geocodedOrigin.latitude, geocodedDest.latitude) - 0.05,
+              minLng: Math.min(geocodedOrigin.longitude, geocodedDest.longitude) - 0.05,
+              maxLat: Math.max(geocodedOrigin.latitude, geocodedDest.latitude) + 0.05,
+              maxLng: Math.max(geocodedOrigin.longitude, geocodedDest.longitude) + 0.05,
+            },
+            ENV.tomtomApiKey
+          ),
+        ]);
+
+        if (!routeInfo && !traffic) {
+          responseText = '❌ No pude calcular la ruta en este momento. Intenta más tarde.';
+        } else if (traffic) {
+          responseText = formatTrafficResponse(traffic, weather, incidents, routeInfo);
+          trafficData = JSON.stringify(traffic);
+          weatherData = weather ? JSON.stringify(weather) : null;
+          incidentData = incidents.length > 0 ? JSON.stringify(incidents) : null;
+        } else if (routeInfo) {
+          // Solo tenemos datos de ruta pero no de flujo
+          responseText =
+            `📍 <b>${routeInfo.origin}</b> → <b>${routeInfo.destination}</b>\n` +
+            `📍 Distancia: ${routeInfo.distanceKm} km\n` +
+            `⏱️ Tiempo estimado: <b>${routeInfo.durationTrafficMinutes} min</b>` +
+            (routeInfo.delayMinutes > 0 ? ` (+${routeInfo.delayMinutes} min por tráfico)` : '') + '\n';
+        }
+      }
+
     } else {
-      // Obtener datos de APIs
+      // ── MODO ZONA ─────────────────────────────────────────────────────
       let coordinates = processed.coordinates;
 
-      // Si no hay ubicación ni coordenadas, pedir al usuario que especifique
+      // Sin ubicación ni coordenadas → pedir al usuario
       if (!coordinates && !processed.location) {
         const queryTypeLabels: Record<string, string> = {
           traffic: 'tráfico',
@@ -147,36 +209,27 @@ async function handleIncomingMessage(message: any, text: string) {
           incident: 'incidente',
         };
         const label = queryTypeLabels[processed.queryType] || 'información';
-        responseText = `📍 ¿En qué lugar quieres consultar el ${label}?\n\nIndica la dirección, barrio o zona.\nEjemplo: "tráfico en la Calle 5" o "clima en el centro"`;
+        responseText =
+          `📍 ¿En qué lugar quieres consultar el ${label}?\n\n` +
+          `Indica la dirección, barrio o zona.\n` +
+          `Ej: "tráfico en la Calle 5" o "de la Calle 5 a la Carrera 7"`;
       }
 
-      // Si no hay coordenadas pero hay ubicación, geocodificar
+      // Geocodificar si hay ubicación pero no coordenadas
       if (!coordinates && processed.location) {
-        const geocoded = await geocodeAddress(
-          processed.location,
-          ENV.tomtomApiKey
-        );
-
+        const geocoded = await geocodeAddress(processed.location, ENV.tomtomApiKey);
         if (geocoded) {
-          coordinates = {
-            latitude: geocoded.latitude,
-            longitude: geocoded.longitude,
-          };
+          coordinates = { latitude: geocoded.latitude, longitude: geocoded.longitude };
         } else {
           responseText =
             '❌ No pude encontrar la ubicación. Por favor, sé más específico.\n\nEscribe /ayuda para más información.';
         }
       }
 
-      // Si tenemos coordenadas, obtener datos
+      // Obtener datos si tenemos coordenadas
       if (coordinates) {
-        // Obtener tráfico
         const traffic = await getTrafficFlow(coordinates, ENV.tomtomApiKey);
-
-        // Obtener clima
         const weather = await getWeatherData(coordinates, ENV.openweatherApiKey);
-
-        // Obtener incidentes
         const incidents = await getTrafficIncidents(
           {
             minLat: coordinates.latitude - 0.05,
@@ -193,8 +246,7 @@ async function handleIncomingMessage(message: any, text: string) {
           weatherData = weather ? JSON.stringify(weather) : null;
           incidentData = incidents.length > 0 ? JSON.stringify(incidents) : null;
         } else {
-          responseText =
-            '❌ No pude obtener información de tráfico en este momento. Intenta más tarde.';
+          responseText = '❌ No pude obtener información de tráfico en este momento. Intenta más tarde.';
         }
       }
     }
