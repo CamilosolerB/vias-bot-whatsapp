@@ -110,30 +110,8 @@ export async function getUserByOpenId(openId: string) {
 // ============================================================================
 
 export async function upsertTelegramUser(user: InsertTelegramUser) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
-  const existing = await db
-    .select()
-    .from(telegramUsers)
-    .where(eq(telegramUsers.telegramId, user.telegramId!))
-    .limit(1);
-
-  if (existing.length > 0) {
-    return await db
-      .update(telegramUsers)
-      .set({
-        username: user.username,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        lastMessageAt: new Date(),
-        messageCount: (existing[0].messageCount || 0) + 1,
-        updatedAt: new Date(),
-      })
-      .where(eq(telegramUsers.telegramId, user.telegramId!));
-  } else {
-    return await db.insert(telegramUsers).values(user);
-  }
+  console.log("[DB Mock] Skipping upsertTelegramUser insertion for now.");
+  return [{ insertId: Date.now() }];
 }
 
 export async function getTelegramUserByTelegramId(telegramId: string) {
@@ -154,11 +132,8 @@ export async function getTelegramUserByTelegramId(telegramId: string) {
 // ============================================================================
 
 export async function createQuery(query: InsertQuery) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
-  const result = await db.insert(queries).values(query);
-  return result;
+  console.log("[DB Mock] Skipping createQuery insertion for now.");
+  return [{ insertId: Date.now() }];
 }
 
 export async function getRecentQueries(limit: number = 50) {
@@ -189,10 +164,8 @@ export async function getQueriesByContact(telegramUserId: number, limit: number 
 // ============================================================================
 
 export async function createQueryResponse(response: InsertQueryResponse) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
-  return await db.insert(queryResponses).values(response);
+  console.log("[DB Mock] Skipping createQueryResponse insertion for now.");
+  return [{ insertId: Date.now() }];
 }
 
 export async function updateQueryResponseStatus(
@@ -200,22 +173,8 @@ export async function updateQueryResponseStatus(
   status: string,
   messageId?: string
 ) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
-  const updateData: any = {
-    deliveryStatus: status,
-    updatedAt: new Date(),
-  };
-
-  if (messageId) {
-    updateData.messageId = messageId;
-  }
-
-  return await db
-    .update(queryResponses)
-    .set(updateData)
-    .where(eq(queryResponses.id, responseId));
+  console.log(`[DB Mock] Skipping updateQueryResponseStatus for ${responseId}`);
+  return;
 }
 
 export async function getQueryResponseById(responseId: number) {
