@@ -1,0 +1,42 @@
+# Dependencias (se instalan dentro del contenedor)
+node_modules/
+.pnpm-store/
+
+# Output de build (se genera dentro del contenedor)
+dist/
+build/
+
+# Variables de entorno (se pasan en runtime, nunca en la imagen)
+.env
+.env.*
+
+# Git
+.git/
+.gitignore
+
+# IDEs
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Testing y cobertura
+coverage/
+.nyc_output/
+
+# Temporales
+tmp/
+temp/
+
+# Archivos de desarrollo que no se usan en producción
+*.md
+!README.md
+vitest.config.ts
+.prettierrc
+.prettierignore
