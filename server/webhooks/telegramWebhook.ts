@@ -97,20 +97,17 @@ async function handleIncomingMessage(message: any, text: string) {
     // Mostrar indicador de escritura
     await sendChatAction(chatInfo.chatId, 'typing', ENV.telegramBotToken);
 
-    // Guardar/actualizar usuario
-    const userResult = await upsertTelegramUser({
+    // Guardar/actualizar usuario (mock-safe)
+    await upsertTelegramUser({
       telegramId: userInfo.telegramId,
       username: userInfo.username,
       firstName: userInfo.firstName,
       lastName: userInfo.lastName,
     });
 
-    // Obtener usuario de la BD
-    const user = await getTelegramUserByTelegramId(userInfo.telegramId);
-    if (!user) {
-      console.error('[Telegram] Failed to get user after upsert');
-      return;
-    }
+    // Obtener usuario de la BD, o usar un objeto sintético si la BD no está disponible
+    const dbUser = await getTelegramUserByTelegramId(userInfo.telegramId);
+    const user = dbUser ?? { id: 0, telegramId: userInfo.telegramId, firstName: userInfo.firstName };
 
     // Procesar mensaje
     const processed = await processMessage(text);
@@ -141,7 +138,19 @@ async function handleIncomingMessage(message: any, text: string) {
       // Obtener datos de APIs
       let coordinates = processed.coordinates;
 
-      // Si no hay coordenadas, geocodificar la ubicación
+      // Si no hay ubicación ni coordenadas, pedir al usuario que especifique
+      if (!coordinates && !processed.location) {
+        const queryTypeLabels: Record<string, string> = {
+          traffic: 'tráfico',
+          weather: 'clima',
+          route: 'ruta',
+          incident: 'incidente',
+        };
+        const label = queryTypeLabels[processed.queryType] || 'información';
+        responseText = `📍 ¿En qué lugar quieres consultar el ${label}?\n\nIndica la dirección, barrio o zona.\nEjemplo: "tráfico en la Calle 5" o "clima en el centro"`;
+      }
+
+      // Si no hay coordenadas pero hay ubicación, geocodificar
       if (!coordinates && processed.location) {
         const geocoded = await geocodeAddress(
           processed.location,

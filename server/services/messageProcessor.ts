@@ -62,9 +62,7 @@ const ROUTE_KEYWORDS = [
   'camino',
   'recorrido',
   'trayecto',
-  'de',
   'hacia',
-  'a',
 ];
 
 const HELP_KEYWORDS = [
@@ -72,10 +70,11 @@ const HELP_KEYWORDS = [
   'help',
   'qué puedo',
   'que puedo',
-  'cómo',
-  'como',
   'funciona',
   'comandos',
+  '/start',
+  '/ayuda',
+  '/help',
 ];
 
 /**
@@ -128,8 +127,13 @@ export async function processMessage(text: string): Promise<ProcessedMessage> {
 function detectQueryType(
   text: string
 ): 'traffic' | 'weather' | 'route' | 'incident' | 'help' | 'unknown' {
-  // Verificar palabras clave en orden de prioridad
-  if (HELP_KEYWORDS.some((kw) => text.includes(kw))) {
+  // Verificar comandos de Telegram primero (empiezan con /)
+  if (text.startsWith('/start') || text.startsWith('/ayuda') || text.startsWith('/help')) {
+    return 'help';
+  }
+
+  // Verificar palabras clave de ayuda (solo como palabras completas o frases exactas)
+  if (HELP_KEYWORDS.some((kw) => text === kw || text.includes(`${kw} `) || text.endsWith(kw))) {
     return 'help';
   }
 
@@ -205,12 +209,7 @@ function extractLocation(text: string): string | undefined {
     }
   }
 
-  // Si no hay patrón explícito, intentar extraer la última palabra significativa
-  const words = text.split(/\s+/);
-  if (words.length > 1) {
-    return words.slice(-2).join(' ');
-  }
-
+  // Si no hay patrón explícito, no asumir ubicación aleatoria
   return undefined;
 }
 
@@ -289,19 +288,14 @@ Escribe "ayuda" para más información.`;
  * Valida si una consulta es válida
  */
 export function isValidQuery(processed: ProcessedMessage): boolean {
-  // No es válida si es desconocida
+  // No es válida si es desconocida — se manejará con el LLM
   if (processed.queryType === 'unknown') {
     return false;
   }
 
-  // No es válida si no hay ubicación (excepto para help)
-  if (processed.queryType !== 'help' && !processed.location) {
-    return false;
-  }
-
-  // Confianza mínima del 30%
-  if (processed.confidence < 30) {
-    return false;
+  // Para help siempre es válida
+  if (processed.queryType === 'help') {
+    return true;
   }
 
   return true;
