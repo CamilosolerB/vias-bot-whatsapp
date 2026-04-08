@@ -4,7 +4,7 @@
 # Build: docker build -t vias-bot .
 # Run: docker run -p 3000:3000 vias-bot
 
-FROM node:18-alpine
+FROM node:22-alpine
 
 # Establecer directorio de trabajo
 WORKDIR /app
