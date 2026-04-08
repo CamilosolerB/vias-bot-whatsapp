@@ -1,6 +1,21 @@
-import { eq } from "drizzle-orm";
+import { eq, desc, and, gte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { 
+  InsertUser, 
+  users,
+  telegramUsers,
+  InsertTelegramUser,
+  frequentRoutes,
+  queries,
+  InsertQuery,
+  queryResponses,
+  InsertQueryResponse,
+  apiLogs,
+  InsertApiLog,
+  errorLogs,
+  InsertErrorLog,
+  analyticsSummary,
+} from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -17,6 +32,10 @@ export async function getDb() {
   }
   return _db;
 }
+
+// ============================================================================
+// USER HELPERS
+// ============================================================================
 
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) {
@@ -89,4 +108,294 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+// ============================================================================
+// TELEGRAM USER HELPERS
+// ============================================================================
+
+export async function upsertTelegramUser(user: InsertTelegramUser) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const existing = await db
+    .select()
+    .from(telegramUsers)
+    .where(eq(telegramUsers.telegramId, user.telegramId!))
+    .limit(1);
+
+  if (existing.length > 0) {
+    return await db
+      .update(telegramUsers)
+      .set({
+        username: user.username,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        lastMessageAt: new Date(),
+        messageCount: (existing[0].messageCount || 0) + 1,
+        updatedAt: new Date(),
+      })
+      .where(eq(telegramUsers.telegramId, user.telegramId!));
+  } else {
+    return await db.insert(telegramUsers).values(user);
+  }
+}
+
+export async function getTelegramUserByTelegramId(telegramId: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db
+    .select()
+    .from(telegramUsers)
+    .where(eq(telegramUsers.telegramId, telegramId))
+    .limit(1);
+
+  return result.length > 0 ? result[0] : null;
+}
+
+// ============================================================================
+// QUERY HELPERS
+// ============================================================================
+
+export async function createQuery(query: InsertQuery) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db.insert(queries).values(query);
+  return result;
+}
+
+export async function getRecentQueries(limit: number = 50) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return await db
+    .select()
+    .from(queries)
+    .orderBy(desc(queries.createdAt))
+    .limit(limit);
+}
+
+export async function getQueriesByContact(telegramUserId: number, limit: number = 20) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return await db
+    .select()
+    .from(queries)
+    .where(eq(queries.waContactId, telegramUserId))
+    .orderBy(desc(queries.createdAt))
+    .limit(limit);
+}
+
+// ============================================================================
+// QUERY RESPONSE HELPERS
+// ============================================================================
+
+export async function createQueryResponse(response: InsertQueryResponse) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return await db.insert(queryResponses).values(response);
+}
+
+export async function updateQueryResponseStatus(
+  responseId: number,
+  status: string,
+  messageId?: string
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const updateData: any = {
+    deliveryStatus: status,
+    updatedAt: new Date(),
+  };
+
+  if (messageId) {
+    updateData.messageId = messageId;
+  }
+
+  return await db
+    .update(queryResponses)
+    .set(updateData)
+    .where(eq(queryResponses.id, responseId));
+}
+
+export async function getQueryResponseById(responseId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db
+    .select()
+    .from(queryResponses)
+    .where(eq(queryResponses.id, responseId))
+    .limit(1);
+
+  return result.length > 0 ? result[0] : null;
+}
+
+// ============================================================================
+// API LOG HELPERS
+// ============================================================================
+
+export async function logApiCall(log: InsertApiLog) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot log API call: database not available");
+    return;
+  }
+
+  try {
+    await db.insert(apiLogs).values(log);
+  } catch (error) {
+    console.error("[Database] Failed to log API call:", error);
+  }
+}
+
+export async function getRecentApiLogs(apiName?: string, limit: number = 100) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const conditions = apiName ? [eq(apiLogs.apiName, apiName)] : [];
+
+  return await db
+    .select()
+    .from(apiLogs)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(apiLogs.createdAt))
+    .limit(limit);
+}
+
+// ============================================================================
+// ERROR LOG HELPERS
+// ============================================================================
+
+export async function logError(error: InsertErrorLog) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot log error: database not available");
+    return;
+  }
+
+  try {
+    await db.insert(errorLogs).values(error);
+  } catch (dbError) {
+    console.error("[Database] Failed to log error:", dbError);
+  }
+}
+
+export async function getRecentErrors(limit: number = 50) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return await db
+    .select()
+    .from(errorLogs)
+    .orderBy(desc(errorLogs.createdAt))
+    .limit(limit);
+}
+
+export async function getUnresolvedErrors(limit: number = 20) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return await db
+    .select()
+    .from(errorLogs)
+    .where(eq(errorLogs.resolved, 0))
+    .orderBy(desc(errorLogs.createdAt))
+    .limit(limit);
+}
+
+// ============================================================================
+// FREQUENT ROUTES HELPERS
+// ============================================================================
+
+export async function getActiveRoutes() {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  return await db
+    .select()
+    .from(frequentRoutes)
+    .where(eq(frequentRoutes.isActive, 1))
+    .orderBy(frequentRoutes.name);
+}
+
+export async function getRouteById(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db
+    .select()
+    .from(frequentRoutes)
+    .where(eq(frequentRoutes.id, id))
+    .limit(1);
+
+  return result.length > 0 ? result[0] : null;
+}
+
+// ============================================================================
+// ANALYTICS HELPERS
+// ============================================================================
+
+export async function getAnalyticsSummaryForDate(date: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db
+    .select()
+    .from(analyticsSummary)
+    .where(eq(analyticsSummary.date, date))
+    .limit(1);
+
+  return result.length > 0 ? result[0] : null;
+}
+
+export async function getAnalyticsSummaryLastDays(days: number = 30) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days);
+  const startDateStr = startDate.toISOString().split('T')[0];
+
+  return await db
+    .select()
+    .from(analyticsSummary)
+    .where(gte(analyticsSummary.date, startDateStr))
+    .orderBy(desc(analyticsSummary.date));
+}
+
+export async function getQueryStats(days: number = 1) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days);
+
+  // This is a simplified query - for production, use raw SQL for better performance
+  const recentQueries = await db
+    .select()
+    .from(queries)
+    .where(gte(queries.createdAt, startDate));
+
+  const totalQueries = recentQueries.length;
+  const successfulQueries = recentQueries.filter(q => q.success === 1).length;
+  const avgResponseTime = recentQueries.length > 0
+    ? Math.round(
+        recentQueries.reduce((sum, q) => sum + (q.responseTime || 0), 0) / recentQueries.length
+      )
+    : 0;
+
+  const successRate = totalQueries > 0
+    ? Math.round((successfulQueries / totalQueries) * 100)
+    : 100;
+
+  return {
+    totalQueries,
+    successfulQueries,
+    avgResponseTime,
+    successRate,
+  };
+}
