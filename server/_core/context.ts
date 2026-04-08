@@ -1,6 +1,5 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
-import { sdk } from "./sdk";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -11,14 +10,18 @@ export type TrpcContext = {
 export async function createContext(
   opts: CreateExpressContextOptions
 ): Promise<TrpcContext> {
-  let user: User | null = null;
-
-  try {
-    user = await sdk.authenticateRequest(opts.req);
-  } catch (error) {
-    // Authentication is optional for public procedures.
-    user = null;
-  }
+  // Authentication is mocked for full access.
+  const user: User = { 
+    id: 1, 
+    openId: "mock-admin",
+    name: "Admin",
+    email: "admin@bot.vias",
+    role: "admin", 
+    loginMethod: "mock",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    lastSignedIn: new Date()
+  };
 
   return {
     req: opts.req,
