@@ -23,6 +23,7 @@ COPY drizzle ./drizzle
 COPY server ./server
 COPY client ./client
 COPY shared ./shared
+COPY patches ./patches
 COPY tsconfig.json vite.config.ts vitest.config.ts drizzle.config.ts ./
 
 # Build de la aplicación
