@@ -25,7 +25,7 @@ COPY drizzle ./drizzle
 COPY server ./server
 COPY client ./client
 COPY shared ./shared
-COPY tsconfig.json vite.config.ts vitest.config.ts drizzle.config.ts ./
+COPY tsconfig.json vite.config.ts drizzle.config.ts ./
 
 # Compilar la aplicación (cliente Vite + servidor esbuild)
 RUN pnpm build
