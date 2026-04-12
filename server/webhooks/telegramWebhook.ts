@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import {
   TelegramUpdate,
+  TelegramMessage,
+  TelegramCallbackQuery,
   sendMessage,
   sendChatAction,
   extractMessageText,
@@ -19,7 +21,12 @@ import {
   getWeatherData,
   getRouteTime,
   formatTrafficResponse,
+  getRoadRiskAlerts,
 } from '../services/trafficWeatherService';
+import {
+  sendMessageWithButtons,
+  answerCallbackQuery,
+} from '../services/telegramService';
 import type { RouteInfo } from '../services/trafficWeatherService';
 import {
   geocodeAddress,
@@ -47,7 +54,12 @@ router.post('/telegram', async (req: Request, res: Response) => {
 
     // Procesar actualización en background
     const update: TelegramUpdate = req.body;
-    handleTelegramUpdate(update);
+    
+    if (update.callback_query) {
+      handleCallbackQuery(update.callback_query);
+    } else {
+      handleTelegramUpdate(update);
+    }
   } catch (error) {
     console.error('[Telegram Webhook] Error processing update:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -88,7 +100,7 @@ async function handleTelegramUpdate(update: TelegramUpdate) {
 /**
  * Maneja un mensaje entrante de Telegram
  */
-async function handleIncomingMessage(message: any, text: string) {
+async function handleIncomingMessage(message: TelegramMessage, text: string) {
   const startTime = Date.now();
 
   try {
@@ -182,7 +194,7 @@ async function handleIncomingMessage(message: any, text: string) {
         if (!routeInfo && !traffic) {
           responseText = '❌ No pude calcular la ruta en este momento. Intenta más tarde.';
         } else if (traffic) {
-          responseText = formatTrafficResponse(traffic, weather, incidents, routeInfo);
+          responseText = formatTrafficResponse(traffic, weather, incidents, processed, routeInfo);
           trafficData = JSON.stringify(traffic);
           weatherData = weather ? JSON.stringify(weather) : null;
           incidentData = incidents.length > 0 ? JSON.stringify(incidents) : null;
@@ -226,6 +238,29 @@ async function handleIncomingMessage(message: any, text: string) {
         }
       }
 
+      // ── MODO MENÚ GENERAL ───────────────────────────────────────────
+      if (processed.isGeneralQuery) {
+        responseText = `🚗 ¡Hola! Veo que te interesa saber sobre <b>${processed.location}</b>.\n\n¿Qué información específica necesitas?`;
+        const buttons = [
+          [
+            { text: '🛣️ Tráfico', callback_data: `topic:traffic:${processed.location}` },
+            { text: '🌤️ Clima', callback_data: `topic:weather:${processed.location}` }
+          ],
+          [
+            { text: '⚠️ Incidentes', callback_data: `topic:incident:${processed.location}` },
+            { text: '🗺️ Todo el reporte', callback_data: `topic:all:${processed.location}` }
+          ]
+        ];
+
+        await sendMessageWithButtons(
+          chatInfo.chatId,
+          responseText,
+          buttons,
+          ENV.telegramBotToken
+        );
+        return; // Salir, ya enviamos el menú
+      }
+
       // Obtener datos si tenemos coordenadas
       if (coordinates) {
         const traffic = await getTrafficFlow(coordinates, ENV.tomtomApiKey);
@@ -241,7 +276,7 @@ async function handleIncomingMessage(message: any, text: string) {
         );
 
         if (traffic) {
-          responseText = formatTrafficResponse(traffic, weather, incidents);
+          responseText = formatTrafficResponse(traffic, weather, incidents, processed);
           trafficData = JSON.stringify(traffic);
           weatherData = weather ? JSON.stringify(weather) : null;
           incidentData = incidents.length > 0 ? JSON.stringify(incidents) : null;
@@ -299,6 +334,60 @@ async function handleIncomingMessage(message: any, text: string) {
     } catch (sendError) {
       console.error('[Telegram] Failed to send error message:', sendError);
     }
+  }
+}
+
+/**
+ * Maneja una consulta de callback (clic en botón)
+ */
+async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
+  const { id, data, message, from } = callbackQuery;
+  if (!message || !data) return;
+
+  try {
+    const chatId = message.chat.id;
+    await answerCallbackQuery(id, 'Obteniendo información...', ENV.telegramBotToken);
+    await sendChatAction(chatId, 'typing', ENV.telegramBotToken);
+
+    // Formato data: topic:TEMA:UBICACION
+    const [_, topic, location] = data.split(':');
+    
+    // Simular un mensaje procesado para el formateador
+    const fakeText = `${topic} en ${location}`;
+    const processed = await processMessage(fakeText);
+    processed.requestedTopic = topic as any;
+
+    const geocoded = await geocodeAddress(location, ENV.tomtomApiKey);
+    if (!geocoded) {
+      await sendMessage(chatId, `❌ No pude encontrar la ubicación: ${location}`, ENV.telegramBotToken);
+      return;
+    }
+
+    const coordinates = { latitude: geocoded.latitude, longitude: geocoded.longitude };
+    
+    // Obtener datos según el tema (o todos para simplificar el flujo)
+    const [traffic, weather, incidents] = await Promise.all([
+      getTrafficFlow(coordinates, ENV.tomtomApiKey),
+      getWeatherData(coordinates, ENV.openweatherApiKey),
+      getTrafficIncidents(
+        {
+          minLat: coordinates.latitude - 0.05,
+          minLng: coordinates.longitude - 0.05,
+          maxLat: coordinates.latitude + 0.05,
+          maxLng: coordinates.longitude + 0.05,
+        },
+        ENV.tomtomApiKey
+      ),
+    ]);
+
+    if (traffic) {
+      const responseText = formatTrafficResponse(traffic, weather, incidents, processed);
+      await sendMessage(chatId, responseText, ENV.telegramBotToken, { parse_mode: 'HTML' });
+    } else {
+      await sendMessage(chatId, '❌ No pude obtener la información en este momento.', ENV.telegramBotToken);
+    }
+  } catch (error) {
+    console.error('[Telegram] Error handling callback query:', error);
   }
 }
 

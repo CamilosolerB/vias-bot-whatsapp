@@ -24,12 +24,20 @@ export interface TelegramMessage {
   entities?: Array<{ type: string; offset: number; length: number }>;
 }
 
+export interface TelegramCallbackQuery {
+  id: string;
+  from: TelegramMessage['from'];
+  message?: TelegramMessage;
+  data?: string;
+}
+
 export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
   edited_message?: TelegramMessage;
   channel_post?: TelegramMessage;
   edited_channel_post?: TelegramMessage;
+  callback_query?: TelegramCallbackQuery;
 }
 
 /**

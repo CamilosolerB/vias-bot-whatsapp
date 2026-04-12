@@ -1,4 +1,5 @@
 import { logApiCall } from '../db';
+import { ProcessedMessage } from './messageProcessor';
 
 /**
  * Traffic & Weather Service
@@ -411,6 +412,7 @@ export function formatTrafficResponse(
   traffic: TrafficFlowData,
   weather: WeatherData | null,
   incidents: TrafficIncident[],
+  processed: ProcessedMessage,
   routeInfo?: RouteInfo | null
 ): string {
   const congestionEmoji = {
@@ -426,10 +428,45 @@ export function formatTrafficResponse(
     blocked: 'Bloqueado',
   };
 
-  let response = '🚗 <b>Estado de Tráfico</b>\n\n';
+  const isWeatherOnly = processed.requestedTopic === 'weather';
+  const isIncidentOnly = processed.requestedTopic === 'incident';
+  const isTrafficOnly = processed.requestedTopic === 'traffic';
+  const isGeneral = processed.requestedTopic === 'all';
 
-  // Si hay ruta calculada de A a B
-  if (routeInfo) {
+  let response = '';
+
+  // 1. Manejo de Preguntas Sí/No específicas (Retroalimentación solicitada)
+  if (processed.isYesNoQuery && processed.conditionKeywords) {
+    const foundIncidents = incidents.filter(inc => 
+      processed.conditionKeywords?.some(kw => 
+        inc.description.toLowerCase().includes(kw) || inc.location.toLowerCase().includes(kw)
+      )
+    );
+
+    if (foundIncidents.length > 0) {
+      const inc = foundIncidents[0];
+      response += `🚨 <b>¡Hola! Sí, se reporta un incidente de ese tipo:</b>\n`;
+      response += `⚠️ ${inc.description}\n`;
+      response += `📍 Lugar: ${inc.location}\n`;
+      if (inc.delay > 0) response += `⏱️ Retraso estimado: ${Math.round(inc.delay / 60)} min\n`;
+      response += `\n<i>Te recomiendo tener precaución al transitar por allí.</i>\n\n`;
+    } else {
+      response += `✅ <b>¡Hola! No se reportan ese tipo de inconvenientes en este momento.</b>\n`;
+      response += `✨ El estado es correcto y estás listo para manejar con tranquilidad. ¡Buen viaje!\n\n`;
+      // Si el usuario preguntó específicamente algo, no saturamos con todo lo demás a menos que sea necesario
+    }
+  } else if (!isGeneral) {
+    // Tono cercano para consultas directas
+    const cityText = processed.location ? ` en ${processed.location}` : '';
+    if (isWeatherOnly) response += `🌤️ ¡Hola! Aquí tienes el reporte del clima${cityText} que me pediste:\n\n`;
+    else if (isTrafficOnly) response += `🚗 ¡Claro! Así está el tráfico${cityText} en este momento:\n\n`;
+    else response += `⚠️ ¡Hola! Aquí están los incidentes reportados${cityText}:\n\n`;
+  } else {
+    response += '🚗 <b>Estado de Tráfico y Clima</b>\n\n';
+  }
+
+  // 2. Ruta A a B
+  if (routeInfo && !isWeatherOnly) {
     response += `📍 <b>${routeInfo.origin}</b> → <b>${routeInfo.destination}</b>\n`;
     response += `📍 Distancia: ${routeInfo.distanceKm} km\n`;
     response += `⏱️ Tiempo sin tráfico: ${routeInfo.durationMinutes} min\n`;
@@ -440,32 +477,28 @@ export function formatTrafficResponse(
     response += '\n';
   }
 
-  // Estado de velocidad en la zona
-  response += `${congestionEmoji[traffic.congestion]} Flujo: <b>${congestionLabel[traffic.congestion]}</b>\n`;
-  response += `🏎️ Velocidad actual: ${traffic.speed} km/h`;
-  if (traffic.speedLimit) {
-    response += ` (límite: ${traffic.speedLimit} km/h)`;
-  }
-  response += '\n';
+  // 3. Tráfico (solo si no es WeatherOnly)
+  if (!isWeatherOnly && (isTrafficOnly || isGeneral || (processed.isYesNoQuery && incidents.length === 0))) {
+    response += `${congestionEmoji[traffic.congestion]} Flujo: <b>${congestionLabel[traffic.congestion]}</b>\n`;
+    response += `🏎️ Velocidad actual: ${traffic.speed} km/h`;
+    if (traffic.speedLimit) {
+      response += ` (límite: ${traffic.speedLimit} km/h)`;
+    }
+    response += '\n';
 
-  // Tiempo estimado solo si NO hay ruta A→B (para no duplicar)
-  if (!routeInfo) {
-    if (traffic.speed > 0) {
-      // Estimación honesta: tiempo para recorrer 1 km a la velocidad actual
+    if (!routeInfo && traffic.speed > 0) {
       const minsPer1km = Math.round(60 / traffic.speed * 10) / 10;
       response += `⏳ Tiempo estimado por km: ~${minsPer1km} min/km\n`;
     }
+    response += `📊 Confiabilidad: ${traffic.confidence}%\n\n`;
   }
 
-  response += `📊 Confiabilidad: ${traffic.confidence}%\n\n`;
-
-  // Clima
-  if (weather) {
-    response += `🌤️ <b>Clima</b>\n`;
+  // 4. Clima (solo si es Weather o General)
+  if (weather && (isWeatherOnly || isGeneral)) {
+    response += `🌤️ <b>Condiciones Climáticas</b>\n`;
     response += `Temperatura: ${Math.round(weather.temperature)}°C\n`;
     response += `Condición: ${weather.condition}\n`;
-    response += `Viento: ${weather.windSpeed} m/s\n`;
-    response += `Visibilidad: ${weather.visibility.toFixed(1)} km\n`;
+    response += `Viento: ${weather.windSpeed} m/s | Visibilidad: ${weather.visibility.toFixed(1)} km\n`;
 
     if (weather.precipitation > 0) {
       response += `🌧️ Lluvia: ${weather.precipitation} mm\n`;
@@ -477,30 +510,34 @@ export function formatTrafficResponse(
     response += '\n';
   }
 
-  // Incidentes
-  if (incidents.length > 0) {
-    response += `⚠️ <b>Incidentes cercanos</b>\n`;
-    incidents.slice(0, 3).forEach((incident) => {
-      const incidentEmoji = {
-        accident: '🚨',
-        congestion: '🚧',
-        construction: '🏗️',
-        roadwork: '🛠️',
-        incident: '⚠️',
-      };
+  // 5. Incidentes (solo si no es WeatherOnly o TrafficOnly)
+  if (!isWeatherOnly && !isTrafficOnly && (isIncidentOnly || isGeneral || (processed.isYesNoQuery && incidents.length > 0))) {
+    if (incidents.length > 0) {
+      // Si ya mostramos el buscado arriba en isYesNoQuery, no repetirlo igual?
+      // Por simplicidad, mostramos los top 3
+      response += `⚠️ <b>Incidentes en la zona</b>\n`;
+      incidents.slice(0, 3).forEach((incident) => {
+        const incidentEmoji = {
+          accident: '🚨',
+          congestion: '🚧',
+          construction: '🏗️',
+          roadwork: '🛠️',
+          incident: '⚠️',
+        };
 
-      response += `${incidentEmoji[incident.type]} ${incident.description}\n`;
-      response += `   📍 ${incident.location}\n`;
-      if (incident.delay > 0) {
-        response += `   ⏱️ Retraso: ${Math.round(incident.delay / 60)} min\n`;
+        response += `${incidentEmoji[incident.type]} ${incident.description}\n`;
+        response += `   📍 ${incident.location}\n`;
+        if (incident.delay > 0) {
+          response += `   ⏱️ Retraso: ${Math.round(incident.delay / 60)} min\n`;
+        }
+      });
+
+      if (incidents.length > 3) {
+        response += `\n... y ${incidents.length - 3} incidentes más\n`;
       }
-    });
-
-    if (incidents.length > 3) {
-      response += `\n... y ${incidents.length - 3} incidentes más\n`;
+    } else if (isIncidentOnly) {
+      response += `✅ ¡Buenas noticias! No se reportan incidentes en la zona.\n`;
     }
-  } else {
-    response += `✅ Sin incidentes reportados en la zona\n`;
   }
 
   return response;

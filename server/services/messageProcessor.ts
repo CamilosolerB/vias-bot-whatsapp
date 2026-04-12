@@ -7,6 +7,7 @@ import { getActiveRoutes } from '../db';
 
 export interface ProcessedMessage {
   queryType: 'traffic' | 'weather' | 'route' | 'incident' | 'help' | 'unknown';
+  requestedTopic: 'traffic' | 'weather' | 'incident' | 'all';
   location?: string;
   origin?: string;      // Para consultas de ruta "de X a Y"
   destination?: string; // Para consultas de ruta "de X a Y"
@@ -14,6 +15,9 @@ export interface ProcessedMessage {
   routeId?: number;
   originalText: string;
   confidence: number;
+  conditionKeywords?: string[]; // ej. "derrumbe", "paro"
+  isGeneralQuery?: boolean;     // ej. solo "Bogotá"
+  isYesNoQuery?: boolean;       // ej. "¿hay derrumbe?"
 }
 
 /**
@@ -67,6 +71,26 @@ const ROUTE_KEYWORDS = [
   'hacia',
 ];
 
+const CONDITION_KEYWORDS = [
+  'derrumbe',
+  'deslizamiento',
+  'bloqueo',
+  'paro',
+  'manifestación',
+  'manifiesto',
+  'manifestacion',
+  'volcamiento',
+  'volcado',
+  'choque',
+  'colisión',
+  'colision',
+  'vía cerrada',
+  'via cerrada',
+  'cerrada',
+  'trancón',
+  'trancon',
+];
+
 const HELP_KEYWORDS = [
   'ayuda',
   'help',
@@ -87,6 +111,21 @@ export async function processMessage(text: string): Promise<ProcessedMessage> {
 
   // Detectar tipo de consulta
   const queryType = detectQueryType(lowerText);
+  let requestedTopic: 'traffic' | 'weather' | 'incident' | 'all' = 'all';
+
+  if (queryType === 'traffic') requestedTopic = 'traffic';
+  if (queryType === 'weather') requestedTopic = 'weather';
+  if (queryType === 'incident') requestedTopic = 'incident';
+
+  // Detectar palabras clave de condiciones específicas
+  const conditionKeywords = detectConditionKeywords(lowerText);
+  if (conditionKeywords.length > 0 && queryType === 'unknown') {
+    // Si hay palabras de incidente pero no se detectó tipo, marcar como incidente
+    // Pero solo si no es algo general o ayuda
+  }
+
+  // Detectar si es una pregunta de Sí/No
+  const isYesNoQuery = isYesNoQuestion(lowerText);
 
   // Intentar detectar patrón "de X a Y" / "desde X hasta Y"
   const routePattern = extractOriginDestination(lowerText);
@@ -116,8 +155,18 @@ export async function processMessage(text: string): Promise<ProcessedMessage> {
     location = extractLocation(lowerText);
   }
 
+  // Detectar si es una consulta general (solo una ubicación sin intención clara)
+  // Ej: el usuario escribe "Bogotá" o "En Bogotá"
+  const isGeneralQuery =
+    (queryType === 'unknown' || queryType === 'traffic') &&
+    location &&
+    lowerText.length < location.length + 10 &&
+    conditionKeywords.length === 0 &&
+    !routePattern;
+
   return {
     queryType,
+    requestedTopic,
     location,
     origin,
     destination,
@@ -125,6 +174,9 @@ export async function processMessage(text: string): Promise<ProcessedMessage> {
     routeId,
     originalText: text,
     confidence: calculateConfidence(queryType, location ?? origin),
+    conditionKeywords: conditionKeywords.length > 0 ? conditionKeywords : undefined,
+    isGeneralQuery: isGeneralQuery || false,
+    isYesNoQuery,
   };
 }
 
@@ -139,12 +191,12 @@ function detectQueryType(
     return 'help';
   }
 
-  // Verificar palabras clave de ayuda (solo como palabras completas o frases exactas)
+  // Verificar palabras clave de ayuda
   if (HELP_KEYWORDS.some((kw) => text === kw || text.includes(`${kw} `) || text.endsWith(kw))) {
     return 'help';
   }
 
-  if (INCIDENT_KEYWORDS.some((kw) => text.includes(kw))) {
+  if (INCIDENT_KEYWORDS.some((kw) => text.includes(kw)) || CONDITION_KEYWORDS.some((kw) => text.includes(kw))) {
     return 'incident';
   }
 
@@ -161,6 +213,24 @@ function detectQueryType(
   }
 
   return 'unknown';
+}
+
+/**
+ * Detecta palabras clave de condiciones específicas
+ */
+function detectConditionKeywords(text: string): string[] {
+  return CONDITION_KEYWORDS.filter((kw) => text.includes(kw));
+}
+
+/**
+ * Detecta si el mensaje parece una pregunta de Sí/No
+ */
+function isYesNoQuestion(text: string): boolean {
+  const indicators = ['hay', 'existe', 'está', 'esta', 'se reporta', 'saben si', 'sabe si', 'confirmar'];
+  const isQuestion = text.includes('?') || text.startsWith('¿');
+  const hasIndicator = indicators.some((ind) => text.includes(ind));
+
+  return (isQuestion && hasIndicator) || (hasIndicator && text.split(' ').length < 6);
 }
 
 /**
