@@ -474,6 +474,8 @@ export function formatTrafficResponse(
     if (routeInfo.delayMinutes > 0) {
       response += `⌛ Demora extra: +${routeInfo.delayMinutes} min por tráfico\n`;
     }
+    const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(routeInfo.origin)}&destination=${encodeURIComponent(routeInfo.destination)}&travelmode=driving`;
+    response += `\n🗺️ <a href="${mapsUrl}">Ver ruta en Google Maps</a>\n`;
     response += '\n';
   }
 
@@ -490,7 +492,7 @@ export function formatTrafficResponse(
       const minsPer1km = Math.round(60 / traffic.speed * 10) / 10;
       response += `⏳ Tiempo estimado por km: ~${minsPer1km} min/km\n`;
     }
-    response += `📊 Confiabilidad: ${traffic.confidence}%\n\n`;
+    response += `📊 Precisión: ${traffic.confidence}%\n\n`;
   }
 
   // 4. Clima (solo si es Weather o General)

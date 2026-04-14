@@ -13,6 +13,7 @@ import {
   processMessage,
   generateHelpMessage,
   generateUnknownMessage,
+  generateDefinitionMessage,
   isValidQuery,
 } from '../services/messageProcessor';
 import {
@@ -147,8 +148,11 @@ async function handleIncomingMessage(message: TelegramMessage, text: string) {
     if (processed.queryType === 'help') {
       responseText = generateHelpMessage();
 
-    } else if (!isValidQuery(processed)) {
+    } else if (!isValidQuery(processed) && processed.queryType !== 'info') {
       responseText = generateUnknownMessage();
+
+    } else if (processed.queryType === 'info') {
+      responseText = generateDefinitionMessage(processed.infoTopic);
 
     } else if (processed.origin && processed.destination) {
       // ── MODO RUTA A → B ──────────────────────────────────────────────

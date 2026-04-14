@@ -6,8 +6,8 @@ import { getActiveRoutes } from '../db';
  */
 
 export interface ProcessedMessage {
-  queryType: 'traffic' | 'weather' | 'route' | 'incident' | 'help' | 'unknown';
-  requestedTopic: 'traffic' | 'weather' | 'incident' | 'all';
+  queryType: 'traffic' | 'weather' | 'route' | 'incident' | 'help' | 'info' | 'unknown';
+  requestedTopic: 'traffic' | 'weather' | 'incident' | 'all' | 'info';
   location?: string;
   origin?: string;      // Para consultas de ruta "de X a Y"
   destination?: string; // Para consultas de ruta "de X a Y"
@@ -18,6 +18,7 @@ export interface ProcessedMessage {
   conditionKeywords?: string[]; // ej. "derrumbe", "paro"
   isGeneralQuery?: boolean;     // ej. solo "Bogotá"
   isYesNoQuery?: boolean;       // ej. "¿hay derrumbe?"
+  infoTopic?: string;           // Tema para consultas tipo 'info' (ej: "flujo lento")
 }
 
 /**
@@ -103,6 +104,36 @@ const HELP_KEYWORDS = [
   '/help',
 ];
 
+const INFO_KEYWORDS = [
+  'qué es',
+  'que es',
+  'significa',
+  'definición',
+  'definicion',
+  'explicación',
+  'explicacion',
+  'cómo así',
+  'como asi',
+  'no entiendo',
+];
+
+const DEFINITION_TOPICS = [
+  'clima',
+  'precisión',
+  'precision',
+  'confiabilidad',
+  'flujo',
+  'fluido',
+  'moderado',
+  'lento',
+  'pesado',
+  'congestionado',
+  'bloqueado',
+  'velocidad',
+  'tiempo estimado',
+  'demora',
+];
+
 /**
  * Procesa un mensaje de usuario y extrae información
  */
@@ -111,17 +142,17 @@ export async function processMessage(text: string): Promise<ProcessedMessage> {
 
   // Detectar tipo de consulta
   const queryType = detectQueryType(lowerText);
-  let requestedTopic: 'traffic' | 'weather' | 'incident' | 'all' = 'all';
+  let requestedTopic: 'traffic' | 'weather' | 'incident' | 'all' | 'info' = 'all';
 
   if (queryType === 'traffic') requestedTopic = 'traffic';
   if (queryType === 'weather') requestedTopic = 'weather';
   if (queryType === 'incident') requestedTopic = 'incident';
+  if (queryType === 'info') requestedTopic = 'info';
 
-  // Detectar palabras clave de condiciones específicas
-  const conditionKeywords = detectConditionKeywords(lowerText);
-  if (conditionKeywords.length > 0 && queryType === 'unknown') {
-    // Si hay palabras de incidente pero no se detectó tipo, marcar como incidente
-    // Pero solo si no es algo general o ayuda
+  // Detectar tema de información si es consulta info
+  let infoTopic: string | undefined;
+  if (queryType === 'info') {
+    infoTopic = DEFINITION_TOPICS.find((topic) => lowerText.includes(topic));
   }
 
   // Detectar si es una pregunta de Sí/No
@@ -177,6 +208,7 @@ export async function processMessage(text: string): Promise<ProcessedMessage> {
     conditionKeywords: conditionKeywords.length > 0 ? conditionKeywords : undefined,
     isGeneralQuery: isGeneralQuery || false,
     isYesNoQuery,
+    infoTopic,
   };
 }
 
@@ -185,7 +217,7 @@ export async function processMessage(text: string): Promise<ProcessedMessage> {
  */
 function detectQueryType(
   text: string
-): 'traffic' | 'weather' | 'route' | 'incident' | 'help' | 'unknown' {
+): 'traffic' | 'weather' | 'route' | 'incident' | 'help' | 'info' | 'unknown' {
   // Verificar comandos de Telegram primero (empiezan con /)
   if (text.startsWith('/start') || text.startsWith('/ayuda') || text.startsWith('/help')) {
     return 'help';
@@ -210,6 +242,10 @@ function detectQueryType(
 
   if (TRAFFIC_KEYWORDS.some((kw) => text.includes(kw))) {
     return 'traffic';
+  }
+
+  if (INFO_KEYWORDS.some((kw) => text.includes(kw)) || (DEFINITION_TOPICS.some(topic => text.includes(topic)) && text.split(' ').length < 4)) {
+    return 'info';
   }
 
   return 'unknown';
@@ -286,7 +322,17 @@ function extractLocation(text: string): string | undefined {
     }
   }
 
-  // Si no hay patrón explícito, no asumir ubicación aleatoria
+  // Mejora: Si el texto es corto (1-3 palabras) y no se detectó intención, 
+  // tratarlo como una ubicación directamente (ej: "Bogotá", "Cali", "Carrera 7")
+  const words = text.split(/\s+/);
+  if (words.length <= 3 && text.length > 2 && !text.includes('?')) {
+    // Evitar keywords conocidas
+    const allKeywords = [...TRAFFIC_KEYWORDS, ...WEATHER_KEYWORDS, ...INCIDENT_KEYWORDS, ...ROUTE_KEYWORDS, ...INFO_KEYWORDS, ...HELP_KEYWORDS];
+    if (!allKeywords.some(kw => text === kw)) {
+      return text;
+    }
+  }
+
   return undefined;
 }
 
@@ -378,14 +424,43 @@ Puedo ayudarte con:
  */
 export function generateUnknownMessage(): string {
   return `No entendí tu consulta. 😅
-
+  
 Puedo ayudarte con:
-• Estado del tráfico
-• Condiciones climáticas
-• Información de rutas
+• Estado del tráfico en una ciudad o zona
+• Condiciones climáticas (ej: "¿cómo está el clima?")
+• Información de rutas (ej: "de Bogotá a Medellín")
 • Reportar incidentes
 
-Escribe "ayuda" para más información.`;
+¿Qué necesitas saber?`;
+}
+
+/**
+ * Genera una respuesta con la definición de un término
+ */
+export function generateDefinitionMessage(topic: string | undefined): string {
+  if (!topic) {
+    return `Lo siento, no tengo una definición clara para ese término. Intenta preguntar por "flujo", "precisión", "clima" o "tiempo estimado".`;
+  }
+
+  const definitions: Record<string, string> = {
+    'clima': '⛅ <b>Clima</b>: Se refiere a las condiciones atmosféricas actuales en la zona consultada, incluyendo temperatura, viento, visibilidad y probabilidad de lluvia.',
+    'precisión': '📊 <b>Precisión de datos</b>: Indica qué tan confiables son los datos de tráfico en este momento. Se basa en la cantidad de vehículos reportando datos en tiempo real y la frescura de la información recolectada por TomTom.',
+    'precision': '📊 <b>Precisión de datos</b>: Indica qué tan confiables son los datos de tráfico en este momento. Se basa en la cantidad de vehículos reportando datos en tiempo real y la frescura de la información recolectada por TomTom.',
+    'confiabilidad': '📊 <b>Precisión de datos</b>: Es lo que anteriormente llamábamos confiabilidad. Indica qué tan certera es la información según la cantidad de fuentes activas en la zona.',
+    'flujo': '🚗 <b>Flujo</b>: Es el estado general del tráfico. Puede ser Fluido (verde), Moderado (amarillo), Lento/Congestionado (rojo) o Bloqueado (negro).',
+    'fluido': '🟢 <b>Flujo Fluido</b>: Los vehículos circulan libremente a la velocidad del límite permitido o muy cerca de él sin interrupciones.',
+    'moderado': '🟡 <b>Flujo Moderado</b>: Hay presencia de vehículos que reducen ligeramente la velocidad promedio, pero el tráfico sigue avanzando con cierta agilidad.',
+    'lento': '🔴 <b>Flujo Lento/Pesado</b>: Alta densidad de vehículos. La velocidad es significativamente menor al límite y hay paradas frecuentes (trancón).',
+    'pesado': '🔴 <b>Flujo Lento/Pesado</b>: Alta densidad de vehículos. La velocidad es significativamente menor al límite y hay paradas frecuentes (trancón).',
+    'congestionado': '🔴 <b>Flujo Congestionado</b>: Los vehículos avanzan muy despacio debido al exceso de tráfico o algún incidente cercano.',
+    'bloqueado': '⛔ <b>Flujo Bloqueado</b>: El tráfico está totalmente detenido, usualmente por cierres viales, accidentes graves o manifestaciones.',
+    'velocidad': '🏎️ <b>Velocidad</b>: Es el promedio de velocidad al que se están desplazando los vehículos registrados en ese tramo de vía en tiempo real.',
+    'tiempo estimado': '⏳ <b>Tiempo Estimado</b>: Es el cálculo de cuánto tardarías en recorrer una distancia (o 1 km) basado en la velocidad actual del flujo vehicular.',
+    'demora': '⌛ <b>Demora</b>: Es el tiempo extra que tardarías comparado con un viaje en condiciones de tráfico libre (sin congestión).'
+  };
+
+  const response = definitions[topic.toLowerCase()];
+  return response || `No tengo una definición exacta para "${topic}", pero puedo decirte que se relaciona con el tráfico o clima de la zona.`;
 }
 
 /**
