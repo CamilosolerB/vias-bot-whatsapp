@@ -149,6 +149,9 @@ export async function processMessage(text: string): Promise<ProcessedMessage> {
   if (queryType === 'incident') requestedTopic = 'incident';
   if (queryType === 'info') requestedTopic = 'info';
 
+  // Detectar palabras clave de condiciones específicas
+  const conditionKeywords = detectConditionKeywords(lowerText);
+
   // Detectar tema de información si es consulta info
   let infoTopic: string | undefined;
   if (queryType === 'info') {
