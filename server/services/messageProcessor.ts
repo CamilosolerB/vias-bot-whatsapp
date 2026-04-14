@@ -141,8 +141,14 @@ export async function processMessage(text: string): Promise<ProcessedMessage> {
   const lowerText = text.toLowerCase().trim();
 
   // Detectar tipo de consulta
-  const queryType = detectQueryType(lowerText);
+  let queryType = detectQueryType(lowerText);
   let requestedTopic: 'traffic' | 'weather' | 'incident' | 'all' | 'info' = 'all';
+
+  // Intentar detectar patrón de ruta "de X a Y" primero
+  const routePattern = extractOriginDestination(lowerText);
+  if (routePattern && (queryType === 'unknown' || queryType === 'traffic')) {
+    queryType = 'route';
+  }
 
   if (queryType === 'traffic') requestedTopic = 'traffic';
   if (queryType === 'weather') requestedTopic = 'weather';
@@ -160,9 +166,6 @@ export async function processMessage(text: string): Promise<ProcessedMessage> {
 
   // Detectar si es una pregunta de Sí/No
   const isYesNoQuery = isYesNoQuestion(lowerText);
-
-  // Intentar detectar patrón "de X a Y" / "desde X hasta Y"
-  const routePattern = extractOriginDestination(lowerText);
 
   // Extraer ubicación o ruta
   let location: string | undefined;
@@ -470,6 +473,11 @@ export function generateDefinitionMessage(topic: string | undefined): string {
  * Valida si una consulta es válida
  */
 export function isValidQuery(processed: ProcessedMessage): boolean {
+  // Si es una consulta general (ej: solo una ubicación), es válida
+  if (processed.isGeneralQuery) {
+    return true;
+  }
+
   // No es válida si es desconocida — se manejará con el LLM
   if (processed.queryType === 'unknown') {
     return false;
