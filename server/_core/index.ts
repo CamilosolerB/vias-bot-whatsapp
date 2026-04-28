@@ -7,6 +7,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import telegramWebhook from "../webhooks/telegramWebhook";
+import whatsappWebhook from "../webhooks/whatsappWebhook";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -36,6 +37,9 @@ async function startServer() {
   
   // Telegram Webhook
   app.use("/api/webhooks", telegramWebhook);
+  
+  // WhatsApp Webhook
+  app.use("/api/webhooks", whatsappWebhook);
   
   // tRPC API
   app.use(

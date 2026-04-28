@@ -6,7 +6,7 @@ import crypto from 'crypto';
  */
 
 const WHATSAPP_API_VERSION = 'v20.0';
-const WHATSAPP_API_BASE = `https://graph.instagram.com/${WHATSAPP_API_VERSION}`;
+const WHATSAPP_API_BASE = `https://graph.facebook.com/${WHATSAPP_API_VERSION}`;
 
 interface WhatsappWebhookPayload {
   object: string;
