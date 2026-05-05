@@ -242,21 +242,52 @@ export async function getRouteMapUrl(
     // Google Static Maps API acepta polyline encoded con precisión 5
     const googlePolyline = encodePolyline(points);
     
-    // 3. Construir URL de Google Static Maps API
-    // Usar bbox para asegurar que toda la ruta sea visible
-    const minLat = Math.min(origin.latitude, destination.latitude);
-    const maxLat = Math.max(origin.latitude, destination.latitude);
-    const minLng = Math.min(origin.longitude, destination.longitude);
-    const maxLng = Math.max(origin.longitude, destination.longitude);
+    // 3. Calcular bounding box usando TODOS los puntos de la ruta (no solo origen/destino)
+    let minLat = points[0].latitude;
+    let maxLat = points[0].latitude;
+    let minLng = points[0].longitude;
+    let maxLng = points[0].longitude;
     
-    // Añadir margen de 10% al bounding box
-    const latMargin = (maxLat - minLat) * 0.1 || 0.01;
-    const lngMargin = (maxLng - minLng) * 0.1 || 0.01;
+    for (const point of points) {
+      minLat = Math.min(minLat, point.latitude);
+      maxLat = Math.max(maxLat, point.latitude);
+      minLng = Math.min(minLng, point.longitude);
+      maxLng = Math.max(maxLng, point.longitude);
+    }
     
-    const bbox = `${minLat - latMargin},${minLng - lngMargin},${maxLat + latMargin},${maxLng + lngMargin}`;
+    // Añadir margen de 15% al bounding box
+    const latMargin = (maxLat - minLat) * 0.15 || 0.005;
+    const lngMargin = (maxLng - minLng) * 0.15 || 0.005;
     
-    // Google Static Maps API URL
+    // Centro del bounding box
+    const centerLat = (minLat + maxLat) / 2;
+    const centerLng = (minLng + maxLng) / 2;
+    
+    // Calcular zoom dinámico basado en la distancia del bounding box
+    const latRange = maxLat - minLat + latMargin * 2;
+    const lngRange = maxLng - minLng + lngMargin * 2;
+    
+    // Zoom basado en el rango máximo (fórmula aproximada para Google Maps)
+    const maxRange = Math.max(latRange, lngRange);
+    let zoom = 13;
+    if (maxRange > 10) zoom = 4;
+    else if (maxRange > 5) zoom = 5;
+    else if (maxRange > 2) zoom = 6;
+    else if (maxRange > 1) zoom = 7;
+    else if (maxRange > 0.5) zoom = 8;
+    else if (maxRange > 0.2) zoom = 9;
+    else if (maxRange > 0.1) zoom = 10;
+    else if (maxRange > 0.05) zoom = 11;
+    else if (maxRange > 0.02) zoom = 12;
+    else if (maxRange > 0.01) zoom = 13;
+    else zoom = 14;
+    
+    console.log('[Maps] Dynamic zoom:', zoom, 'Center:', centerLat, centerLng, 'Range:', maxRange.toFixed(4));
+    
+    // 4. Construir URL de Google Static Maps API con center y zoom dinámicos
     const mapUrl = `https://maps.googleapis.com/maps/api/staticmap?size=600x400&format=png&scale=2` +
+      `&center=${centerLat},${centerLng}` +
+      `&zoom=${zoom}` +
       `&style=feature:all|element:all|saturation:-20|lightness:10` +
       `&path=weight:5|color:0x0070FF|enc:${googlePolyline}` +
       `&markers=color:green|label:A|${origin.latitude},${origin.longitude}` +
