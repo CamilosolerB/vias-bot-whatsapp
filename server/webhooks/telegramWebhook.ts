@@ -425,24 +425,33 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
         return;
       }
 
-      const mapUrl = await getRouteMapUrl(
+      const routeMapData = await getRouteMapUrl(
         { latitude: geocodedOrigin.latitude, longitude: geocodedOrigin.longitude },
         { latitude: geocodedDest.latitude, longitude: geocodedDest.longitude },
-        ENV.tomtomApiKey,
+        originName,
+        destName,
         ENV.googleMapsApiKey
       );
 
-      if (!mapUrl) {
+      if (!routeMapData) {
         console.error('[Telegram] Failed to generate map URL');
         await sendMessage(chatId, '❌ No pude generar la miniatura del mapa. Intenta de nuevo.', ENV.telegramBotToken);
         return;
       }
 
-      console.log('[Telegram] Sending photo with URL:', mapUrl.substring(0, 150) + '...');
+      console.log('[Telegram] Sending photo with route map');
       
-      const photoResult = await sendPhoto(chatId, mapUrl, ENV.telegramBotToken, {
+      // Enviar foto con botón inline "Ver en Google Maps"
+      const buttons = [[
+        { text: '🗺️ Ver en Google Maps', url: routeMapData.googleMapsUrl }
+      ]];
+
+      const photoResult = await sendPhoto(chatId, routeMapData.mapUrl, ENV.telegramBotToken, {
         caption: `🗺️ Trazado de ruta: <b>${originName}</b> → <b>${destName}</b>`,
-        parse_mode: 'HTML'
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: buttons
+        }
       });
 
       if (!photoResult.ok) {

@@ -335,6 +335,9 @@ export async function sendPhoto(
   options?: {
     caption?: string;
     parse_mode?: 'HTML' | 'Markdown' | 'MarkdownV2';
+    reply_markup?: {
+      inline_keyboard: Array<Array<{ text: string; url: string } | { text: string; callback_data: string }>>;
+    };
   }
 ): Promise<{ ok: boolean; result?: any }> {
   try {
@@ -346,6 +349,10 @@ export async function sendPhoto(
       caption: options?.caption,
       parse_mode: options?.parse_mode || 'HTML',
     };
+
+    if (options?.reply_markup) {
+      payload.reply_markup = options.reply_markup;
+    }
 
     const response = await fetch(url, {
       method: 'POST',
