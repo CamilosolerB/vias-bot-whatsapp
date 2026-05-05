@@ -434,8 +434,8 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
       );
 
       if (!routeMapData) {
-        console.error('[Telegram] Failed to generate map URL');
-        await sendMessage(chatId, '❌ No pude generar la miniatura del mapa. Intenta de nuevo.', ENV.telegramBotToken);
+        console.error('[Telegram] Failed to generate map URL for route:', originName, '->', destName);
+        await sendMessage(chatId, '❌ No pude generar la miniatura del mapa. Esto puede deberse a un problema de configuración con Google Maps. Intenta de nuevo.', ENV.telegramBotToken);
         return;
       }
 

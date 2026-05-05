@@ -216,6 +216,11 @@ export async function getRouteMapUrl(
   destinationName: string,
   googleMapsApiKey: string
 ): Promise<RouteMapData | null> {
+  if (!googleMapsApiKey) {
+    console.error('[Maps] Google Maps API Key is missing');
+    return null;
+  }
+
   try {
     // 1. Obtener la geometría de la ruta de Google Directions API
     const directionsUrl = `https://maps.googleapis.com/maps/api/directions/json` +
@@ -226,14 +231,15 @@ export async function getRouteMapUrl(
     console.log('[Google Directions] Fetching route for map generation...');
     const response = await fetch(directionsUrl);
     if (!response.ok) {
-      console.error('[Google Directions] Failed to fetch route:', response.status);
+      const errorText = await response.text();
+      console.error('[Google Directions] HTTP Error:', response.status, errorText);
       return null;
     }
     
     const data = await response.json();
     
     if (data.status !== 'OK' || !data.routes || data.routes.length === 0) {
-      console.error('[Google Directions] No route found:', data.status, data.error_message);
+      console.error('[Google Directions] No route found:', data.status, data.error_message || 'No additional error info');
       return null;
     }
     
@@ -282,13 +288,14 @@ export async function getRouteMapUrl(
     // 3. Construir URL de Google Static Maps API con center y zoom dinámicos
     const encodedPolyline = encodeURIComponent(polyline);
     
+    // Codificar pipes (|) como %7C para mayor seguridad en la URL
     const mapUrl = `https://maps.googleapis.com/maps/api/staticmap?size=600x400&format=png&scale=2` +
       `&center=${centerLat},${centerLng}` +
       `&zoom=${zoom}` +
-      `&style=feature:all|element:all|saturation:-20|lightness:10` +
-      `&path=weight:5|color:0x0070FF|enc:${encodedPolyline}` +
-      `&markers=color:green|label:A|${origin.latitude},${origin.longitude}` +
-      `&markers=color:red|label:B|${destination.latitude},${destination.longitude}` +
+      `&style=feature:all%7Celement:all%7Csaturation:-20%7Clightness:10` +
+      `&path=weight:5%7Ccolor:0x0070FF%7Cenc:${encodedPolyline}` +
+      `&markers=color:green%7Clabel:A%7C${origin.latitude},${origin.longitude}` +
+      `&markers=color:red%7Clabel:B%7C${destination.latitude},${destination.longitude}` +
       `&key=${googleMapsApiKey}`;
     
     // 4. Generar URL de Google Maps para abrir en la app/web
