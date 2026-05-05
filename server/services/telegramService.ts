@@ -326,6 +326,48 @@ export async function answerCallbackQuery(
 }
 
 /**
+ * Envía una foto a través de Telegram
+ */
+export async function sendPhoto(
+  chatId: number | string,
+  photoUrl: string,
+  botToken: string,
+  options?: {
+    caption?: string;
+    parse_mode?: 'HTML' | 'Markdown' | 'MarkdownV2';
+  }
+): Promise<{ ok: boolean; result?: any }> {
+  try {
+    const url = `https://api.telegram.org/bot${botToken}/sendPhoto`;
+
+    const payload: any = {
+      chat_id: chatId,
+      photo: photoUrl,
+      caption: options?.caption,
+      parse_mode: options?.parse_mode || 'HTML',
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json();
+
+    if (!data.ok) {
+      console.error('[Telegram] Error sending photo:', data);
+      return { ok: false };
+    }
+
+    return { ok: true, result: data.result };
+  } catch (error) {
+    console.error('[Telegram] Exception sending photo:', error);
+    return { ok: false };
+  }
+}
+
+/**
  * Extrae texto de un mensaje de Telegram
  */
 export function extractMessageText(message: TelegramMessage): string | null {

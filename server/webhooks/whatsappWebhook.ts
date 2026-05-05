@@ -65,8 +65,36 @@ router.post('/whatsapp', async (req: Request, res: Response) => {
       }
     }
 
+    // --- SUSPENSION DEL SERVICIO ---
+    // Responde con 200 para evitar que Meta siga reintentando, pero no procesa el mensaje
     res.status(200).json({ ok: true });
 
+    const payload = req.body;
+    const { messages } = parseWebhookPayload(payload);
+
+    if (!messages || messages.length === 0) {
+      return;
+    }
+
+    for (const msg of messages) {
+      const from = msg.from;
+      const phoneNumberId = msg.phone_number_id;
+      
+      // Enviar mensaje de suspensión una sola vez o en cada mensaje
+      await sendTextMessage(
+        phoneNumberId,
+        from,
+        '⚠️ *Servicio Suspendido*\n\nEl servicio de WhatsApp se encuentra temporalmente fuera de servicio. Por favor, utiliza el bot de Telegram para tus consultas.',
+        ENV.whatsappAccessToken
+      );
+      
+      console.log(`[WhatsApp] Service suspended message sent to ${from}`);
+    }
+    return;
+    // --- FIN SUSPENSION ---
+
+    // El código original queda inaccesible mientras esté la suspensión arriba
+    /*
     const payload = req.body;
     const { messages } = parseWebhookPayload(payload);
 
@@ -82,6 +110,7 @@ router.post('/whatsapp', async (req: Request, res: Response) => {
         await handleIncomingMessage(msg);
       }
     }
+    */
   } catch (error) {
     console.error('[WhatsApp Webhook] Error processing update:', error);
     res.status(500).json({ error: 'Internal server error' });

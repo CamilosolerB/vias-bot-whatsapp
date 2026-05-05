@@ -21,12 +21,14 @@ import {
   getTrafficIncidents,
   getWeatherData,
   getRouteTime,
+  getRouteMapUrl,
   formatTrafficResponse,
   getRoadRiskAlerts,
 } from '../services/trafficWeatherService';
 import {
   sendMessageWithButtons,
   answerCallbackQuery,
+  sendPhoto,
 } from '../services/telegramService';
 import type { RouteInfo } from '../services/trafficWeatherService';
 import {
@@ -39,6 +41,7 @@ import {
   createQueryResponse,
   logError,
 } from '../db';
+import { isTelegramUserAuthorized } from '../services/userAccess';
 import { ENV } from '../_core/env';
 
 const router = Router();
@@ -83,6 +86,23 @@ async function handleTelegramUpdate(update: TelegramUpdate) {
     if (!text) {
       return;
     }
+
+    // --- VERIFICACIÓN DE AUTORIZACIÓN ---
+    const userInfo = extractUserInfo(message);
+    const isAuthorized = await isTelegramUserAuthorized(userInfo.telegramId);
+    
+    if (!isAuthorized) {
+      console.warn(`[Telegram] Unauthorized access attempt from ID: ${userInfo.telegramId} (${userInfo.username})`);
+      const chatInfo = extractChatInfo(message);
+      await sendMessage(
+        chatInfo.chatId,
+        `🚫 <b>Acceso Denegado</b>\n\nTu ID de usuario (<code>${userInfo.telegramId}</code>) no está autorizado para usar este bot. Por favor, solicita acceso al administrador.`,
+        ENV.telegramBotToken,
+        { parse_mode: 'HTML' }
+      );
+      return;
+    }
+    // --- FIN VERIFICACIÓN ---
 
     // Procesar mensaje
     await handleIncomingMessage(message, text);
@@ -202,6 +222,20 @@ async function handleIncomingMessage(message: TelegramMessage, text: string) {
           trafficData = JSON.stringify(traffic);
           weatherData = weather ? JSON.stringify(weather) : null;
           incidentData = incidents.length > 0 ? JSON.stringify(incidents) : null;
+
+          // Añadir botón de "Ver ruta" si es una consulta de ruta
+          if (routeInfo) {
+            const buttons = [
+              [{ text: '🗺️ Ver miniatura de ruta', callback_data: `route:map:${processed.origin}|${processed.destination}` }]
+            ];
+            await sendMessageWithButtons(
+              chatInfo.chatId,
+              responseText,
+              buttons,
+              ENV.telegramBotToken
+            );
+            return;
+          }
         } else if (routeInfo) {
           // Solo tenemos datos de ruta pero no de flujo
           responseText =
@@ -209,6 +243,17 @@ async function handleIncomingMessage(message: TelegramMessage, text: string) {
             `📍 Distancia: ${routeInfo.distanceKm} km\n` +
             `⏱️ Tiempo estimado: <b>${routeInfo.durationTrafficMinutes} min</b>` +
             (routeInfo.delayMinutes > 0 ? ` (+${routeInfo.delayMinutes} min por tráfico)` : '') + '\n';
+            
+          const buttons = [
+            [{ text: '🗺️ Ver miniatura de ruta', callback_data: `route:map:${processed.origin}|${processed.destination}` }]
+          ];
+          await sendMessageWithButtons(
+            chatInfo.chatId,
+            responseText,
+            buttons,
+            ENV.telegramBotToken
+          );
+          return;
         }
       }
 
@@ -350,8 +395,46 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
 
   try {
     const chatId = message.chat.id;
+    const telegramId = from.id.toString();
+    
+    // Verificar autorización en callbacks también
+    const isAuthorized = await isTelegramUserAuthorized(telegramId);
+    if (!isAuthorized) {
+      await answerCallbackQuery(id, 'Acceso denegado', ENV.telegramBotToken, true);
+      return;
+    }
+
     await answerCallbackQuery(id, 'Obteniendo información...', ENV.telegramBotToken);
     await sendChatAction(chatId, 'typing', ENV.telegramBotToken);
+
+    // Manejar mapa de ruta
+    if (data.startsWith('route:map:')) {
+      const [_, __, routeParts] = data.split(':');
+      const [originName, destName] = routeParts.split('|');
+
+      const [geocodedOrigin, geocodedDest] = await Promise.all([
+        geocodeAddress(originName, ENV.tomtomApiKey),
+        geocodeAddress(destName, ENV.tomtomApiKey),
+      ]);
+
+      if (geocodedOrigin && geocodedDest) {
+        const mapUrl = await getRouteMapUrl(
+          { latitude: geocodedOrigin.latitude, longitude: geocodedOrigin.longitude },
+          { latitude: geocodedDest.latitude, longitude: geocodedDest.longitude },
+          ENV.tomtomApiKey
+        );
+
+        if (mapUrl) {
+          await sendPhoto(chatId, mapUrl, ENV.telegramBotToken, {
+            caption: `🗺️ Trazado de ruta: <b>${originName}</b> → <b>${destName}</b>`,
+            parse_mode: 'HTML'
+          });
+        } else {
+          await sendMessage(chatId, '❌ No pude generar la miniatura del mapa.', ENV.telegramBotToken);
+        }
+      }
+      return;
+    }
 
     // Formato data: topic:TEMA:UBICACION
     const [_, topic, location] = data.split(':');

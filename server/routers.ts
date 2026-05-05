@@ -12,6 +12,11 @@ import {
   getActiveRoutes,
   getRouteById,
 } from "./db";
+import {
+  getAuthorizedTelegramUsers,
+  addAuthorizedTelegramUser,
+  removeAuthorizedTelegramUser,
+} from "./services/userAccess";
 
 export const appRouter = router({
   system: systemRouter,
@@ -259,6 +264,71 @@ export const appRouter = router({
         },
       };
     }),
+  }),
+
+  // ============================================================================
+  // TELEGRAM USER ACCESS (FILE BASED)
+  // ============================================================================
+
+  authorizedUsers: router({
+    /**
+     * Obtiene todos los usuarios autorizados
+     */
+    list: protectedProcedure.query(async () => {
+      try {
+        const users = await getAuthorizedTelegramUsers();
+        return {
+          success: true,
+          data: users,
+        };
+      } catch (error) {
+        console.error('[AuthorizedUsers] Error listing users:', error);
+        return {
+          success: false,
+          error: 'Failed to list authorized users',
+        };
+      }
+    }),
+
+    /**
+     * Agrega un usuario a la lista de autorizados
+     */
+    add: protectedProcedure
+      .input(z.object({ telegramId: z.string() }))
+      .mutation(async ({ input }) => {
+        try {
+          await addAuthorizedTelegramUser(input.telegramId);
+          return {
+            success: true,
+          };
+        } catch (error) {
+          console.error('[AuthorizedUsers] Error adding user:', error);
+          return {
+            success: false,
+            error: 'Failed to add authorized user',
+          };
+        }
+      }),
+
+    /**
+     * Elimina un usuario de la lista de autorizados
+     */
+    remove: protectedProcedure
+      .input(z.object({ telegramId: z.string() }))
+      .mutation(async ({ input }) => {
+        try {
+          await removeAuthorizedTelegramUser(input.telegramId);
+          return {
+            success: true,
+          };
+        } catch (error) {
+          console.error('[AuthorizedUsers] Error removing user:', error);
+          return {
+            success: false,
+            error: 'Failed to remove authorized user',
+          };
+        }
+      }),
   }),
 });
 

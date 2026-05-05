@@ -37,6 +37,14 @@ const TRAFFIC_KEYWORDS = [
   'carretera',
   'autopista',
   'calle',
+  'avenida',
+  'carrera',
+  'movilidad',
+  'trancón',
+  'trancon',
+  'circular',
+  'circulación',
+  'reporte',
 ];
 
 const WEATHER_KEYWORDS = [
@@ -50,6 +58,14 @@ const WEATHER_KEYWORDS = [
   'tormenta',
   'nublado',
   'soleado',
+  'granizo',
+  'neblina',
+  'calor',
+  'frio',
+  'frío',
+  'climatológico',
+  'pronóstico',
+  'pronostico',
 ];
 
 const INCIDENT_KEYWORDS = [
@@ -62,6 +78,14 @@ const INCIDENT_KEYWORDS = [
   'policía',
   'policia',
   'bomberos',
+  'volcado',
+  'volcamiento',
+  'atropellado',
+  'muerto',
+  'fallecido',
+  'herido',
+  'ambulancia',
+  'patrulla',
 ];
 
 const ROUTE_KEYWORDS = [
@@ -70,6 +94,12 @@ const ROUTE_KEYWORDS = [
   'recorrido',
   'trayecto',
   'hacia',
+  'llegar',
+  'ir a',
+  'destino',
+  'mapa',
+  'trazado',
+  'viaje',
 ];
 
 const CONDITION_KEYWORDS = [
@@ -90,6 +120,16 @@ const CONDITION_KEYWORDS = [
   'cerrada',
   'trancón',
   'trancon',
+  'obras',
+  'construcción',
+  'hueco',
+  'bache',
+  'inundación',
+  'inundacion',
+  'caído',
+  'caido',
+  'árbol',
+  'arbol',
 ];
 
 const HELP_KEYWORDS = [
@@ -312,13 +352,17 @@ async function extractRoute(text: string): Promise<any | null> {
 function extractLocation(text: string): string | undefined {
   // Patrones comunes para extraer ubicación
   const patterns = [
-    /en\s+([a-záéíóúñ\s]+?)(?:\?|$|\.)/i,
-    /de\s+([a-záéíóúñ\s]+?)(?:\?|$|\.)/i,
-    /hacia\s+([a-záéíóúñ\s]+?)(?:\?|$|\.)/i,
-    /a\s+([a-záéíóúñ\s]+?)(?:\?|$|\.)/i,
+    /en\s+([a-záéíóúñ\s0-9]+?)(?:\?|$|\.)/i,
+    /de\s+([a-záéíóúñ\s0-9]+?)(?:\?|$|\.)/i,
+    /hacia\s+([a-záéíóúñ\s0-9]+?)(?:\?|$|\.)/i,
+    /a\s+([a-záéíóúñ\s0-9]+?)(?:\?|$|\.)/i,
+    /por\s+([a-záéíóúñ\s0-9]+?)(?:\?|$|\.)/i,
+    /cerca\s+de\s+([a-záéíóúñ\s0-9]+?)(?:\?|$|\.)/i,
     /calle\s+([a-záéíóúñ0-9\s]+?)(?:\?|$|\.)/i,
     /avenida\s+([a-záéíóúñ0-9\s]+?)(?:\?|$|\.)/i,
     /carrera\s+([a-záéíóúñ0-9\s]+?)(?:\?|$|\.)/i,
+    /transversal\s+([a-záéíóúñ0-9\s]+?)(?:\?|$|\.)/i,
+    /diagonal\s+([a-záéíóúñ0-9\s]+?)(?:\?|$|\.)/i,
   ];
 
   for (const pattern of patterns) {

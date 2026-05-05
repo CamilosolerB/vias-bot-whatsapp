@@ -201,6 +201,53 @@ export async function getRouteTime(
 }
 
 /**
+ * Genera una URL de mapa estático con el trazado de la ruta
+ */
+export async function getRouteMapUrl(
+  origin: LocationCoordinates,
+  destination: LocationCoordinates,
+  tomtomApiKey: string
+): Promise<string | null> {
+  try {
+    // 1. Obtener la geometría de la ruta
+    const routingUrl = `https://api.tomtom.com/routing/1/calculateRoute/${origin.latitude},${origin.longitude}:${destination.latitude},${destination.longitude}/json?key=${tomtomApiKey}&routeRepresentation=polyline&maxAlternatives=0`;
+    
+    const response = await fetch(routingUrl);
+    if (!response.ok) return null;
+    
+    const data = await response.json();
+    const points = data.routes?.[0]?.legs?.[0]?.points;
+    
+    if (!points || points.length === 0) return null;
+    
+    // 2. TomTom Static Image API permite dibujar un path
+    // Formato: path=color:weight|lat1,lng1|lat2,lng2|...
+    // Sin embargo, para rutas largas esto puede exceder el límite de URL.
+    // Usaremos una versión simplificada del path o simplemente el mapa centrado con marcadores.
+    
+    // Simplificar: tomar 1 de cada 10 puntos para no exceder longitud de URL
+    const simplifiedPoints = points.filter((_: any, i: number) => i % 10 === 0 || i === points.length - 1);
+    const pathStr = simplifiedPoints.map((p: any) => `${p.latitude},${p.longitude}`).join('|');
+    
+    // Calcular centro y zoom aproximado (simplificado)
+    const centerLat = (origin.latitude + destination.latitude) / 2;
+    const centerLng = (origin.longitude + destination.longitude) / 2;
+    
+    const mapUrl = `https://api.tomtom.com/map/1/staticimage?key=${tomtomApiKey}` +
+      `&layer=basic&style=main&format=png&width=600&height=400&view=Unified` +
+      `&center=${centerLat},${centerLng}&zoom=11` +
+      `&path=color:0x0070FF,width:5|${pathStr}` +
+      `&pins=default|color:0x00FF00|label:A|${origin.latitude},${origin.longitude}` +
+      `&pins=default|color:0xFF0000|label:B|${destination.latitude},${destination.longitude}`;
+      
+    return mapUrl;
+  } catch (error) {
+    console.error('[TomTom] Error generating route map URL:', error);
+    return null;
+  }
+}
+
+/**
  * Obtiene incidentes de tráfico de TomTom
  */
 export async function getTrafficIncidents(
