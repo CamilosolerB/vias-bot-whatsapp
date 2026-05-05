@@ -283,13 +283,17 @@ export async function getRouteMapUrl(
     else zoom = 14;
     
     console.log('[Maps] Dynamic zoom:', zoom, 'Center:', centerLat, centerLng, 'Range:', maxRange.toFixed(4));
+    console.log('[Maps] Polyline length:', googlePolyline.length, 'First 100 chars:', googlePolyline.substring(0, 100));
     
     // 4. Construir URL de Google Static Maps API con center y zoom dinámicos
+    // IMPORTANTE: El polyline debe estar URL-encoded
+    const encodedPolyline = encodeURIComponent(googlePolyline);
+    
     const mapUrl = `https://maps.googleapis.com/maps/api/staticmap?size=600x400&format=png&scale=2` +
       `&center=${centerLat},${centerLng}` +
       `&zoom=${zoom}` +
       `&style=feature:all|element:all|saturation:-20|lightness:10` +
-      `&path=weight:5|color:0x0070FF|enc:${googlePolyline}` +
+      `&path=weight:5|color:0x0070FF|enc:${encodedPolyline}` +
       `&markers=color:green|label:A|${origin.latitude},${origin.longitude}` +
       `&markers=color:red|label:B|${destination.latitude},${destination.longitude}` +
       `&key=${googleMapsApiKey}`;
