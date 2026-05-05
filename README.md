@@ -118,6 +118,11 @@ TOMTOM_API_KEY=tu_clave_tomtom
 # Regístrate en: https://openweathermap.org/api
 OPENWEATHER_API_KEY=tu_clave_openweather
 
+# Google Maps API Key (miniaturas de rutas con Static Maps API)
+# Regístrate en: https://console.cloud.google.com
+# Habilita la API: Static Maps API
+GOOGLE_MAPS_API_KEY=tu_clave_google_maps
+
 # (Opcional) Google Sheets para logs adicionales
 GOOGLE_SHEETS_API_KEY=
 GOOGLE_SHEETS_SHEET_ID=

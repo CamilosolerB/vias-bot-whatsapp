@@ -412,26 +412,42 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
       const [_, __, routeParts] = data.split(':');
       const [originName, destName] = routeParts.split('|');
 
+      console.log('[Telegram] Generating map for route:', originName, '->', destName);
+
       const [geocodedOrigin, geocodedDest] = await Promise.all([
         geocodeAddress(originName, ENV.tomtomApiKey),
         geocodeAddress(destName, ENV.tomtomApiKey),
       ]);
 
-      if (geocodedOrigin && geocodedDest) {
-        const mapUrl = await getRouteMapUrl(
-          { latitude: geocodedOrigin.latitude, longitude: geocodedOrigin.longitude },
-          { latitude: geocodedDest.latitude, longitude: geocodedDest.longitude },
-          ENV.tomtomApiKey
-        );
+      if (!geocodedOrigin || !geocodedDest) {
+        console.error('[Telegram] Failed to geocode route addresses');
+        await sendMessage(chatId, '❌ No pude encontrar una o ambas ubicaciones.', ENV.telegramBotToken);
+        return;
+      }
 
-        if (mapUrl) {
-          await sendPhoto(chatId, mapUrl, ENV.telegramBotToken, {
-            caption: `🗺️ Trazado de ruta: <b>${originName}</b> → <b>${destName}</b>`,
-            parse_mode: 'HTML'
-          });
-        } else {
-          await sendMessage(chatId, '❌ No pude generar la miniatura del mapa.', ENV.telegramBotToken);
-        }
+      const mapUrl = await getRouteMapUrl(
+        { latitude: geocodedOrigin.latitude, longitude: geocodedOrigin.longitude },
+        { latitude: geocodedDest.latitude, longitude: geocodedDest.longitude },
+        ENV.tomtomApiKey,
+        ENV.googleMapsApiKey
+      );
+
+      if (!mapUrl) {
+        console.error('[Telegram] Failed to generate map URL');
+        await sendMessage(chatId, '❌ No pude generar la miniatura del mapa. Intenta de nuevo.', ENV.telegramBotToken);
+        return;
+      }
+
+      console.log('[Telegram] Sending photo with URL:', mapUrl.substring(0, 150) + '...');
+      
+      const photoResult = await sendPhoto(chatId, mapUrl, ENV.telegramBotToken, {
+        caption: `🗺️ Trazado de ruta: <b>${originName}</b> → <b>${destName}</b>`,
+        parse_mode: 'HTML'
+      });
+
+      if (!photoResult.ok) {
+        console.error('[Telegram] Failed to send photo');
+        await sendMessage(chatId, '❌ Error al enviar la imagen del mapa.', ENV.telegramBotToken);
       }
       return;
     }

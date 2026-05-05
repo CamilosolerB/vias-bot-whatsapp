@@ -14,7 +14,8 @@ export const ENV = {
   tomtomApiKey: process.env.TOMTOM_API_KEY ?? "",
   // OpenWeatherMap API
   openweatherApiKey: process.env.OPENWEATHER_API_KEY ?? "",
-  // Google Sheets
+  // Google Maps
+  googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? "",
   googleSheetsApiKey: process.env.GOOGLE_SHEETS_API_KEY ?? "",
   googleSheetsSheetId: process.env.GOOGLE_SHEETS_SHEET_ID ?? "",
 };

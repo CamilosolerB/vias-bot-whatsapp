@@ -201,50 +201,123 @@ export async function getRouteTime(
 }
 
 /**
- * Genera una URL de mapa estático con el trazado de la ruta
+ * Genera una URL de mapa estático con el trazado de la ruta usando Google Static Maps API
  */
 export async function getRouteMapUrl(
   origin: LocationCoordinates,
   destination: LocationCoordinates,
-  tomtomApiKey: string
+  tomtomApiKey: string,
+  googleMapsApiKey: string
 ): Promise<string | null> {
   try {
-    // 1. Obtener la geometría de la ruta
+    // 1. Obtener la geometría de la ruta de TomTom
     const routingUrl = `https://api.tomtom.com/routing/1/calculateRoute/${origin.latitude},${origin.longitude}:${destination.latitude},${destination.longitude}/json?key=${tomtomApiKey}&routeRepresentation=polyline&maxAlternatives=0`;
     
+    console.log('[TomTom] Fetching route for map generation...');
     const response = await fetch(routingUrl);
-    if (!response.ok) return null;
+    if (!response.ok) {
+      console.error('[TomTom] Failed to fetch route for map:', response.status);
+      return null;
+    }
     
     const data = await response.json();
-    const points = data.routes?.[0]?.legs?.[0]?.points;
+    const route = data.routes?.[0];
     
-    if (!points || points.length === 0) return null;
+    if (!route) {
+      console.error('[TomTom] No route in response');
+      return null;
+    }
     
-    // 2. TomTom Static Image API permite dibujar un path
-    // Formato: path=color:weight|lat1,lng1|lat2,lng2|...
-    // Sin embargo, para rutas largas esto puede exceder el límite de URL.
-    // Usaremos una versión simplificada del path o simplemente el mapa centrado con marcadores.
+    // TomTom devuelve los puntos en legs[0].points como array de {latitude, longitude}
+    const points = route.legs?.[0]?.points;
     
-    // Simplificar: tomar 1 de cada 10 puntos para no exceder longitud de URL
-    const simplifiedPoints = points.filter((_: any, i: number) => i % 10 === 0 || i === points.length - 1);
-    const pathStr = simplifiedPoints.map((p: any) => `${p.latitude},${p.longitude}`).join('|');
+    if (!points || points.length === 0) {
+      console.error('[TomTom] No points in route response');
+      return null;
+    }
     
-    // Calcular centro y zoom aproximado (simplificado)
-    const centerLat = (origin.latitude + destination.latitude) / 2;
-    const centerLng = (origin.longitude + destination.longitude) / 2;
+    console.log('[TomTom] Route has', points.length, 'points');
     
-    const mapUrl = `https://api.tomtom.com/map/1/staticimage?key=${tomtomApiKey}` +
-      `&layer=basic&style=main&format=png&width=600&height=400&view=Unified` +
-      `&center=${centerLat},${centerLng}&zoom=11` +
-      `&path=color:0x0070FF,width:5|${pathStr}` +
-      `&pins=default|color:0x00FF00|label:A|${origin.latitude},${origin.longitude}` +
-      `&pins=default|color:0xFF0000|label:B|${destination.latitude},${destination.longitude}`;
+    // 2. Convertir puntos de TomTom a polyline encoded de Google
+    // Google Static Maps API acepta polyline encoded con precisión 5
+    const googlePolyline = encodePolyline(points);
+    
+    // 3. Construir URL de Google Static Maps API
+    // Usar bbox para asegurar que toda la ruta sea visible
+    const minLat = Math.min(origin.latitude, destination.latitude);
+    const maxLat = Math.max(origin.latitude, destination.latitude);
+    const minLng = Math.min(origin.longitude, destination.longitude);
+    const maxLng = Math.max(origin.longitude, destination.longitude);
+    
+    // Añadir margen de 10% al bounding box
+    const latMargin = (maxLat - minLat) * 0.1 || 0.01;
+    const lngMargin = (maxLng - minLng) * 0.1 || 0.01;
+    
+    const bbox = `${minLat - latMargin},${minLng - lngMargin},${maxLat + latMargin},${maxLng + lngMargin}`;
+    
+    // Google Static Maps API URL
+    const mapUrl = `https://maps.googleapis.com/maps/api/staticmap?size=600x400&format=png&scale=2` +
+      `&style=feature:all|element:all|saturation:-20|lightness:10` +
+      `&path=weight:5|color:0x0070FF|enc:${googlePolyline}` +
+      `&markers=color:green|label:A|${origin.latitude},${origin.longitude}` +
+      `&markers=color:red|label:B|${destination.latitude},${destination.longitude}` +
+      `&key=${googleMapsApiKey}`;
       
+    console.log('[Google Maps] Generated static map URL (truncated):', mapUrl.substring(0, 150) + '...');
     return mapUrl;
   } catch (error) {
-    console.error('[TomTom] Error generating route map URL:', error);
+    console.error('[Maps] Error generating route map URL:', error);
     return null;
   }
+}
+
+/**
+ * Convierte un array de puntos {latitude, longitude} a polyline encoded (formato Google con precisión 5)
+ */
+function encodePolyline(points: Array<{latitude: number, longitude: number}>): string {
+  let prevLat = 0;
+  let prevLng = 0;
+  let encoded = '';
+  
+  for (const point of points) {
+    const lat = Math.round(point.latitude * 1e5);
+    const lng = Math.round(point.longitude * 1e5);
+    
+    const dLat = lat - prevLat;
+    const dLng = lng - prevLng;
+    
+    prevLat = lat;
+    prevLng = lng;
+    
+    encoded += encodeSignedNumber(dLat);
+    encoded += encodeSignedNumber(dLng);
+  }
+  
+  return encoded;
+}
+
+/**
+ * Codifica un número signed para polyline encoding
+ */
+function encodeSignedNumber(num: number): string {
+  // Left shift y XOR para números negativos
+  const sgnNum = num < 0 ? ~num << 1 : num << 1;
+  return encodeUnsignedNumber(sgnNum);
+}
+
+/**
+ * Codifica un número unsigned para polyline encoding
+ */
+function encodeUnsignedNumber(num: number): string {
+  let encoded = '';
+  
+  while (num >= 0x20) {
+    encoded += String.fromCharCode((0x20 | (num & 0x1f)) + 63);
+    num >>= 5;
+  }
+  
+  encoded += String.fromCharCode(num + 63);
+  return encoded;
 }
 
 /**
