@@ -28,7 +28,6 @@ import {
 import {
   sendMessageWithButtons,
   answerCallbackQuery,
-  sendPhoto,
 } from '../services/telegramService';
 import type { RouteInfo } from '../services/trafficWeatherService';
 import {
@@ -439,24 +438,20 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
         return;
       }
 
-      console.log('[Telegram] Sending photo with route map');
-      
-      // Enviar foto con botón inline "Ver en Google Maps"
-      const buttons = [[
-        { text: '🗺️ Ver en Google Maps', url: routeMapData.googleMapsUrl }
-      ]];
+      console.log('[Telegram] Sending route link with map preview');
 
-      const photoResult = await sendPhoto(chatId, routeMapData.mapUrl, ENV.telegramBotToken, {
-        caption: `🗺️ Trazado de ruta: <b>${originName}</b> → <b>${destName}</b>`,
+      // Enviar la URL de Google Maps para que Telegram genere un link preview clickable
+      const messageText =
+        `🗺️ <b>Trazado de ruta:</b> ${originName} → ${destName}\n\n` +
+        `📍 <a href="${routeMapData.googleMapsUrl}">Abrir ruta en Google Maps</a>`;
+
+      const result = await sendMessage(chatId, messageText, ENV.telegramBotToken, {
         parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: buttons
-        }
       });
 
-      if (!photoResult.ok) {
-        console.error('[Telegram] Failed to send photo');
-        await sendMessage(chatId, '❌ Error al enviar la imagen del mapa.', ENV.telegramBotToken);
+      if (!result.ok) {
+        console.error('[Telegram] Failed to send route message');
+        await sendMessage(chatId, '❌ Error al enviar la ruta.', ENV.telegramBotToken);
       }
       return;
     }
